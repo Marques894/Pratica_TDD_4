@@ -1,0 +1,91 @@
+from django.contrib.auth.models import User
+from django.test import TestCase, Client
+from django.urls import reverse
+from http import HTTPStatus
+from core.models import Agenda
+
+class EditContactOKTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        
+        # Cria um usuário de teste (admin)
+        new_user = User.objects.create(email='renan.marques3@fatec.sp.gov.br', username='renan')
+        new_user.set_password('fatec')
+        new_user.save()
+        
+        # URLs usadas nos testes
+        self.login_url = reverse('login')
+        self.edit_url = reverse('edit_contact')
+        
+        # Cria um contato de teste
+        self.agenda = Agenda.objects.create(
+            nome_completo='Renan Teste',
+            telefone='19999999999',
+            email='renan.teste@fatec.sp.gov.br',
+            observacao=''
+        )
+
+    def test_not_logged_edit_template(self):
+        response = self.client.get(self.edit_url)
+        self.assertNotEqual(response.status_code, HTTPStatus.OK)
+        self.assertRedirects(response, f'{self.login_url}?next={self.edit_url}')
+
+    def test_logged_edit_template(self):
+        self.client.login(username='renan', password='fatec')
+        response = self.client.get(self.edit_url)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTemplateUsed(response, 'edit_contact.html')
+    
+    def test_edit_post_data(self):
+        self.client.login(username='renan', password='fatec')
+        data = {
+            'id': self.agenda.pk,
+            'nome_completo': 'Renan Teste Editado',
+            'telefone': '19988887777',
+            'email': 'renan.editado@fatec.sp.gov.br',
+            'observacao': 'Contato atualizado com sucesso.'
+        }
+        response = self.client.post(self.edit_url, data)
+        self.assertEqual(response.status_code, HTTPStatus.FOUND)
+        self.assertRedirects(response, reverse('home'))
+        self.agenda.refresh_from_db()
+        self.assertTrue(Agenda.objects.filter(nome_completo='Renan Teste Editado').exists())
+
+    def test_edit_post_invalid_data(self):
+        self.client.login(username='renan', password='fatec')
+        data = {
+            'id': self.agenda.pk,
+            'nome_completo': '',
+            'telefone': 'error',
+            'email': '',
+            'observacao': 'teste'
+        }
+        response = self.client.post(self.edit_url, data)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTemplateUsed(response, 'edit_contact.html')
+        self.assertContains(response, 'Nome Completo: Informe o nome completo')
+        self.assertContains(response, 'O telefone deve conter apenas')
+        self.assertContains(response, 'E-Mail: Informe o e-mail')
+        self.assertFalse(Agenda.objects.filter(telefone='error').exists())
+        self.assertTrue(Agenda.objects.filter(nome_completo='Renan Teste').exists())
+
+    def test_edit_post_no_data(self):
+        self.client.login(username='renan', password='fatec')
+        response = self.client.post(self.edit_url, {})
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTemplateUsed(response, 'edit_contact.html')
+        self.assertTrue(Agenda.objects.filter(nome_completo='Renan Teste').exists())
+
+    def test_edit_post_invalid_id(self):
+        self.client.login(username='renan', password='fatec')
+        data = {
+            'id': 99999,
+            'nome_completo': 'Renan Teste Editado',
+            'telefone': '19999999999',
+            'email': 'renan.invalido@fatec.sp.gov.br',
+            'observacao': 'teste edit'
+        }
+        response = self.client.post(self.edit_url, data)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTemplateUsed(response, 'edit_contact.html')
+        self.assertTrue(Agenda.objects.filter(nome_completo='Renan Teste').exists())
